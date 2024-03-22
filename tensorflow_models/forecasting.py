@@ -1,92 +1,81 @@
-import tensorflow as tf
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from tensorflow.python.framework.ops import SymbolicTensor
-import tensorflow_datasets as tfds
-from typing import Tuple
-import numpy as np
-import math
+# Use stock market values
+# Use Open, High, Low, Close, values at a given day to predict the closing value of the next couple of days
+import yfinance as yf
 import matplotlib.pyplot as plt
+import pandas as pd
+import tensorflow as tf
+from tensorflow.keras.layers import Bidirectional, Dense, InputLayer, LSTM
+import os
+from sklearn.preprocessing import StandardScaler
+import numpy as np
 
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '0' 
+
+
+DATA_COLS = ["Open", "High", "Low", "Close"]
 BATCH_SIZE = 32
+WIN_SIZE = 10
 EPOCHS = 1000
-IMG_SHAPE = 32
-N_CLASSES = 10
-
-def scale_images(image: SymbolicTensor, label: int) -> Tuple[SymbolicTensor, int]:
-    image = tf.cast(image, tf.float32)
-    image /= 255
-    return image, label
-
-def image_augment(image: SymbolicTensor, label: int) -> Tuple[SymbolicTensor, int]:
-    image = tf.image.random_flip_left_right(image)
-
-    return image, label
-
-dataset, metadata = tfds.load('cifar10', as_supervised=True, with_info=True)
-train_dataset, test_dataset = dataset['train'], dataset['test']
+N_FEATURES = len(DATA_COLS)
 
 
-num_train_examples = metadata.splits['train'].num_examples
-num_test_examples = metadata.splits['test'].num_examples
+def sequential_window_dataset(series: np.ndarray, 
+                              window_size: int=WIN_SIZE,
+                              batch_size: int=BATCH_SIZE):
+    ds = tf.data.Dataset.from_tensor_slices(series)
+    ds = ds.window(window_size + 1, shift=window_size, drop_remainder=True)
+    ds = ds.flat_map(lambda window: window.batch(window_size + 1))
+    ds = ds.map(lambda window: (window[:-1], window[1:, -1]))
+    return ds.batch(batch_size).prefetch(1)
 
+    
+'''Load stock data'''
+data = yf.download("AAPL", start="2020-01-01", end="2024-01-30")
 
-train_dataset = (train_dataset.map(scale_images, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-                              .cache()  # cache after scaling
-                              .prefetch(tf.data.experimental.AUTOTUNE)
-                              .repeat()
-                              .shuffle(num_train_examples)
-                              .map(image_augment, num_parallel_calls=tf.data.experimental.AUTOTUNE) # no cache since transformation is random
-                              .batch(BATCH_SIZE))
+'''Split Data'''
+split_idx = int(0.75 * data.shape[0])
+split_time = data.index[split_idx]
 
-test_dataset = (test_dataset.map(scale_images, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-                            .cache()
-                            .batch(BATCH_SIZE))
+x_train = data.loc[:split_time, DATA_COLS]
+train_time = x_train.index.to_numpy()
+x_val = data.loc[split_time:, DATA_COLS]
+val_time = x_val.index.to_numpy()
 
-model = tf.keras.models.Sequential([
-    tf.keras.layers.InputLayer(input_shape=(IMG_SHAPE, IMG_SHAPE, 3),
-                               batch_size=BATCH_SIZE),
-    tf.keras.layers.Conv2D(64, (3,3), activation='relu', padding='same'),
-    tf.keras.layers.MaxPooling2D(2, 2),
+'''Normalize data'''
+scaler = StandardScaler()
+x_train = scaler.fit_transform(x_train)
+x_val = scaler.transform(x_val)
 
-    tf.keras.layers.Conv2D(128, (3,3), activation='relu', padding='same'),
-    tf.keras.layers.MaxPooling2D(2,2),
+train_set = sequential_window_dataset(x_train)
+val_set = sequential_window_dataset(x_val)
 
-    tf.keras.layers.Conv2D(256, (3,3), activation='relu', padding='same'),
-    tf.keras.layers.MaxPooling2D(2,2),
-
-    tf.keras.layers.Conv2D(256, (3,3), activation='relu', padding='same'),
-    tf.keras.layers.MaxPooling2D(2,2),
-
-    tf.keras.layers.Dropout(0.5),
-    tf.keras.layers.Flatten(),
-    tf.keras.layers.Dense(512, activation='relu'),
-    tf.keras.layers.Dense(N_CLASSES, activation='softmax')
+model = tf.keras.models.Sequential([ # input dimension (batch size, # of time steps, # of features)
+  InputLayer(input_shape=(WIN_SIZE, N_FEATURES),
+             batch_size=BATCH_SIZE), 
+  Bidirectional(LSTM(30, return_sequences=True)),  # returns the previous time steps in a window at each neuron (100 nuerons + steps in sequence)
+  Bidirectional(LSTM(30)), # 100 nuerons accepted but only the latest time output (size=1) set sent to the next layer
+  Dense(1)
 ])
 
-dot_img_file = 'model.png'
-tf.keras.utils.plot_model(model, to_file=dot_img_file, show_shapes=True)
-
-model.compile(optimizer='adam',
-              loss=tf.keras.losses.SparseCategoricalCrossentropy(),
-              metrics=['accuracy'])
-
-model_checkpoint = tf.keras.callbacks.ModelCheckpoint(
-    "bestmodel.h5", save_best_only=True) # saves model after each epoch if better than best model available
+fname = os.path.join('saved_models', 'tf_best_forecast_model.h5')
+model_checkpoint = tf.keras.callbacks.ModelCheckpoint(fname, save_best_only=True)
 early_stopping = tf.keras.callbacks.EarlyStopping(patience=10)
 
-history = model.fit(train_dataset,
-                    epochs=EPOCHS,
-                    steps_per_epoch=math.ceil(num_train_examples/BATCH_SIZE),
-                    validation_data=test_dataset,
-                    validation_steps=math.ceil(num_test_examples/BATCH_SIZE),
-                    use_multiprocessing=True,
-                    workers=8,
-                    batch_size=BATCH_SIZE,
-                    callbacks=[early_stopping, model_checkpoint])
+optimizer = tf.keras.optimizers.legacy.SGD(lr=0.001, momentum=0.9)
+model.compile(loss=tf.keras.losses.Huber(),
+              optimizer=optimizer,
+              metrics=["mae"])
+
+model.summary()
+
+history = model.fit(train_set, 
+                    epochs=EPOCHS, 
+                    validation_data=val_set,
+                    callbacks=[model_checkpoint, early_stopping])
 
 
-acc = history.history['accuracy']
-val_acc = history.history['val_accuracy']
+acc = history.history['mae']
+val_acc = history.history['val_mae']
 
 loss = history.history['loss']
 val_loss = history.history['val_loss']
@@ -110,3 +99,6 @@ plt.ylabel('Loss value')
 plt.legend(loc='upper right')
 plt.title('Training and Validation Loss')
 plt.show()
+
+
+

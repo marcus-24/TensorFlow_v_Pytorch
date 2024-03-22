@@ -3,9 +3,9 @@ from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.python.framework.ops import SymbolicTensor
 import tensorflow_datasets as tfds
 from typing import Tuple
-import numpy as np
 import math
 import matplotlib.pyplot as plt
+import os
 
 BATCH_SIZE = 32
 EPOCHS = 1000
@@ -63,15 +63,15 @@ model = tf.keras.models.Sequential([
     tf.keras.layers.Dense(N_CLASSES, activation='softmax')
 ])
 
-dot_img_file = 'model.png'
-tf.keras.utils.plot_model(model, to_file=dot_img_file, show_shapes=True)
+# dot_img_file = os.path.join('saved_models', 'tf_cnn_model_arch.png')
+# tf.keras.utils.plot_model(model, to_file=dot_img_file, show_shapes=True, show_layer_names=True)
 
 model.compile(optimizer='adam',
               loss=tf.keras.losses.SparseCategoricalCrossentropy(),
               metrics=['accuracy'])
 
 model_checkpoint = tf.keras.callbacks.ModelCheckpoint(
-    "bestmodel.h5", save_best_only=True) # saves model after each epoch if better than best model available
+    "bestmodel.h5", save_best_only=True)  # saves model after each epoch if better than best model available
 early_stopping = tf.keras.callbacks.EarlyStopping(patience=10)
 
 history = model.fit(train_dataset,
@@ -109,4 +109,9 @@ plt.xlabel('# of epochs')
 plt.ylabel('Loss value')
 plt.legend(loc='upper right')
 plt.title('Training and Validation Loss')
+
+for image, label in test_dataset.take(1):
+    plt.figure()
+    plt.imshow(image)
+    plt.title(label)
 plt.show()
