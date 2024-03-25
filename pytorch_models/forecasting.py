@@ -10,10 +10,11 @@ import yfinance as yf
 import torch.optim as optim
 from tqdm import tqdm
 
-
 # Ignore warnings
 import warnings
 warnings.filterwarnings("ignore")
+
+from customtorchutils import get_workers
 
 DATA_COLS = ["Open", "High", "Low", "Close"]
 BATCH_SIZE = 32
@@ -50,13 +51,13 @@ class LSTMNet(nn.Module):
                  bidirectional: bool = True):
         super().__init__()
         self._num_layers = num_layers  # number of LSTM layers to stack together
-        self._hidden_size = 2 * hidden_size if bidirectional else hidden_size # number of features in hidden state (sets output size)
         self._lstm = nn.LSTM(input_size, 
                              hidden_size, 
                              num_layers, 
                              batch_first=True, # batch_first sets input dim-> (batch_size, window, input_size)
                              bidirectional=bidirectional)
-        self._fc = nn.Linear(hidden_size * 2, num_classes) 
+        lstm_output_size = 2 * hidden_size if bidirectional else hidden_size # number of features in hidden state (sets output size)
+        self._fc = nn.Linear(lstm_output_size, num_classes) 
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         out, _ = self._lstm(x)  # out dim -> (batch_size, window, hidden_size)
@@ -67,11 +68,7 @@ class LSTMNet(nn.Module):
 
 
 if __name__ == "__main__":
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    num_workers = 0 if device == "cuda" else 2  # avoids runtime error since gpu cant have multiple workers
-    print('device used: ', device)
-    print('num workers: ', num_workers)
-    torch.set_default_device(device)
+    device, num_workers = get_workers()
 
     '''Load stock data'''
     data = yf.download("AAPL", start="2020-01-01", end="2024-01-30")

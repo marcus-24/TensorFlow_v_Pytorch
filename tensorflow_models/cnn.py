@@ -6,6 +6,8 @@ from typing import Tuple
 import math
 import matplotlib.pyplot as plt
 import os
+import datetime
+
 
 BATCH_SIZE = 32
 EPOCHS = 1000
@@ -63,16 +65,17 @@ model = tf.keras.models.Sequential([
     tf.keras.layers.Dense(N_CLASSES, activation='softmax')
 ])
 
-# dot_img_file = os.path.join('saved_models', 'tf_cnn_model_arch.png')
-# tf.keras.utils.plot_model(model, to_file=dot_img_file, show_shapes=True, show_layer_names=True)
+time_now = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+log_dir = os.path.join('log_files', f'tf_cnn_{time_now}')
 
 model.compile(optimizer='adam',
               loss=tf.keras.losses.SparseCategoricalCrossentropy(),
               metrics=['accuracy'])
 
-model_checkpoint = tf.keras.callbacks.ModelCheckpoint(
-    "bestmodel.h5", save_best_only=True)  # saves model after each epoch if better than best model available
+fname = os.path.join('saved_models', 'tf_best_cnn_model.h5')
+model_checkpoint = tf.keras.callbacks.ModelCheckpoint(fname, save_best_only=True)  # saves model after each epoch if better than best model available
 early_stopping = tf.keras.callbacks.EarlyStopping(patience=10)
+tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, histogram_freq=1)
 
 history = model.fit(train_dataset,
                     epochs=EPOCHS,
@@ -82,7 +85,7 @@ history = model.fit(train_dataset,
                     use_multiprocessing=True,
                     workers=8,
                     batch_size=BATCH_SIZE,
-                    callbacks=[early_stopping, model_checkpoint])
+                    callbacks=[early_stopping, model_checkpoint, tensorboard_callback])
 
 
 acc = history.history['accuracy']
@@ -110,8 +113,8 @@ plt.ylabel('Loss value')
 plt.legend(loc='upper right')
 plt.title('Training and Validation Loss')
 
-for image, label in test_dataset.take(1):
-    plt.figure()
-    plt.imshow(image)
-    plt.title(label)
-plt.show()
+# for image, label in test_dataset.take(1):
+#     plt.figure()
+#     plt.imshow(image)
+#     plt.title(label)
+# plt.show()

@@ -6,6 +6,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 from tqdm import tqdm
 
+from customtorchutils import get_workers
+
 BATCH_SIZE = 32
 N_CLASSES = 10
 EPOCHS = 5
@@ -35,11 +37,7 @@ class Net(nn.Module):
         return x
     
 if __name__ == "__main__":
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    num_workers = 0 if device == "cuda" else 2  # avoids runtime error since gpu cant have multiple workers
-    print('device used: ', device)
-    print('num workers: ', num_workers)
-    torch.set_default_device(device)
+    device, num_workers = get_workers()
 
     '''Create a pipeline of transformations'''
     training_transform = transforms.Compose(
