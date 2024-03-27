@@ -12,6 +12,7 @@ import re
 import string
 import itertools
 from tqdm import tqdm
+import numpy as np
 
 from customtorchutils import get_workers
 
@@ -19,7 +20,7 @@ from customtorchutils import get_workers
 EPOCHS = 1000
 BATCH_SIZE = 64
 VOCAB_SIZE = 1000
-MAX_LEN = 150
+MAX_LEN = 30
 EMBEDDING_DIM = 16
 N_CLASSES = 3
 
@@ -114,12 +115,7 @@ if __name__ == "__main__":
         transforms.Truncate(max_seq_len=MAX_LEN), # truncate to max length
         transforms.ToTensor(), 
         transforms.PadTransform(max_length=MAX_LEN, pad_value=0)) # pad values (only takes tensor as input)
-    
-    # for sentence in training_tweets:
-    #     generator = vocab_generator([sentence])
-    #     print(list(itertools.chain.from_iterable(generator)))
-
-    
+ 
 
     '''Create Datasets for Model'''
     train_set = SentimentDataset(texts=training_tweets, 
@@ -145,11 +141,15 @@ if __name__ == "__main__":
     optimizer = optim.Adam(net.parameters(), lr=0.01)
     
     n_train_batches = len(trainloader)
+    n_val_batches = len(testloader)
+    early_stop_thresh = 10
+    best_loss = 1e100
+    best_epoch = -1
+
+    # TODO: Break up script below into functions
     for epoch in range(EPOCHS):  # loop over the dataset multiple times
 
-        running_loss = 0.0
-        correct = 0
-        total_samples = 0
+        running_loss, running_loss_val, correct, correct_val, total_samples, total_samples_val = np.zeros(6)
         for i, data in tqdm(enumerate(trainloader), desc=f'Epoch: {epoch + 1}/{EPOCHS}', total=n_train_batches):
             # get the inputs; data is a list of [inputs, labels]
             inputs, labels = data
@@ -172,7 +172,32 @@ if __name__ == "__main__":
 
         avg_loss = running_loss / n_train_batches
         avg_acc = 100 * correct / total_samples  # TODO: Double check math
-        print(f'Average loss={avg_loss} \t Average accuracy={avg_acc}%')
+        print(f'Average loss={avg_loss:.4f}  Average accuracy={avg_acc:.3f}%', end="\t")
+
+        net.eval() # activate testing mode
+        for data in testloader:
+            inputs, labels = data
+            inputs, labels = inputs.to(device), labels.to(device)
+            outputs = net(inputs)
+            loss_val = criterion(outputs, labels)
+            running_loss_val += loss_val.item()
+            _, predicted = torch.max(outputs.data, 1)
+            correct_val += (predicted == labels).sum().item()
+            total_samples_val += labels.size(0)
+        
+        avg_loss_val = running_loss_val / n_val_batches
+        avg_acc_val = 100 * correct_val / total_samples_val  # TODO: Double check math
+        print(f'Average val loss={avg_loss_val:.4f}  Average val accuracy={avg_acc_val:.3f}%')
+
+        if avg_loss_val < best_loss:
+            best_loss = avg_loss_val
+            best_epoch = epoch
+            torch.save(net.state_dict(), os.path.join('saved_models', 'torch_best_sentiment_model.pt'))
+
+        elif epoch - best_epoch > early_stop_thresh:
+            print("Early stopped training at epoch ", epoch)
+            break  # terminate the training loop
+
 
 
     print('Finished Training')

@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 EPOCHS = 1000
 BATCH_SIZE = 64
 VOCAB_SIZE = 1000
-MAX_LEN = 150
+MAX_LEN = 30
 TRUNC_TYPE = 'post'
 PADDING_TYPE = 'post'
 EMBEDDING_DIM = 16

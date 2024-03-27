@@ -151,11 +151,13 @@ if __name__ == "__main__":
         for data in val_loader:
             inputs, labels = data
             inputs, labels = inputs.to(device), labels.to(device)
-            predicted = net(inputs)
+            outputs = net(inputs)
+            loss_val = criterion(outputs, labels) # calulate loss for batch
+            running_loss_val += loss_val.item()
             abs_errors_val += (outputs - labels).abs().sum().item()
             total_samples_val += labels.size(0)
         
-        avg_loss_val = running_loss / n_val_batches
+        avg_loss_val = running_loss_val / n_val_batches
         mae_val = abs_errors_val / total_samples_val  # TODO: Double check math
         print(f'Average val loss={avg_loss_val} \t Val MAE={mae_val}')
 
