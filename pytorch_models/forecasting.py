@@ -35,7 +35,7 @@ class TimeSeriesDataset(Dataset):
     def __len__(self) -> int:
         return self._data.shape[0] - self._window_size # handles tf drop_remainder arg
     
-    def __getitem__(self, index) -> Tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, index: int) -> Tuple[torch.Tensor, torch.Tensor]:
         feature = self._data[index:index + self._window_size, :]
         # target = self._data[index + 1:index + self._window_size + 1, self._target_idx] for seq to seq
         target = self._data[index + self._window_size, self._target_idx]

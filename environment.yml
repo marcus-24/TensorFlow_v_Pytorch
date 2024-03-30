@@ -22,5 +22,7 @@ dependencies:
     - torchvision
     - torchaudio
     - torchtext
+    - torcheval
+    
 
     
